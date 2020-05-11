@@ -4,6 +4,9 @@
   "description": "",
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": "12.14.0"
+  },
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "nest build",
@@ -12,7 +15,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
-    "postinstall": "npm run prestart:prod",
+    "postinstall": "npm run start:prod",
     "lint": "tslint -p tsconfig.json -c tslint.json"
   },
   "dependencies": {
