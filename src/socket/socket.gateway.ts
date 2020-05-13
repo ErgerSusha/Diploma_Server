@@ -9,6 +9,7 @@ import { Socket } from 'socket.io';
 interface ChatSocket extends Socket {
   isAdmin: boolean;
   calleeId: string;
+  isCalling: boolean;
 }
 
 @WebSocketGateway()
@@ -23,7 +24,7 @@ export class SocketsController implements OnGatewayConnection, OnGatewayDisconne
   }
 
   @SubscribeMessage('rtcevent')
-  sendMessageByUserId(connection: ChatSocket, eventJson: string) {
+  sendMessageByUserId(caller: ChatSocket, eventJson: string) {
     let data: any;
     try {
       data = JSON.parse(eventJson);
@@ -36,14 +37,17 @@ export class SocketsController implements OnGatewayConnection, OnGatewayDisconne
 
     switch (data.type) {
       case 'offer':
-        connection.calleeId = data.calleeId;
+        caller.calleeId = data.calleeId;
         this.sendTo(callee, 'offer', {
             offer: data.offer,
-            callerId: connection.id
+            callerId: caller.id
         });
         break;
       case 'answer':
-        connection.calleeId = data.calleeId;
+        caller.calleeId = data.calleeId;        
+        caller.isCalling = true;
+        callee.isCalling = true;
+        this.onUsersCallStatusChanged(true, caller, callee);
         this.sendTo(callee, 'answer', {
             answer: data.answer
         });
@@ -53,9 +57,11 @@ export class SocketsController implements OnGatewayConnection, OnGatewayDisconne
             candidate: data.candidate
         });
         break;
-      case "leave":
-        delete connection.calleeId;
-        this.sendTo(callee, 'leave');
+      case "hangup":
+        delete caller.calleeId;
+        delete caller.isCalling;
+        this.onUsersCallStatusChanged(false, caller, callee);
+        this.sendTo(callee, 'hangup');
         break;
       }
   }
@@ -72,7 +78,7 @@ export class SocketsController implements OnGatewayConnection, OnGatewayDisconne
         client.emit('init_users',
           this.users
             .filter(_user => client.isAdmin ? !_user.isAdmin : _user.isAdmin)
-            .map(_user => _user.id)
+            .map(_user => ({ id: _user.id, isCalling: _user.isCalling }))
         );
       } else if ((client.isAdmin && !user.isAdmin) || (!client.isAdmin && user.isAdmin)) {
         user.emit('user_connected', client.id);
@@ -93,6 +99,18 @@ export class SocketsController implements OnGatewayConnection, OnGatewayDisconne
     this.users.forEach(user => {
       if ((client.isAdmin && !user.isAdmin) || (!client.isAdmin && user.isAdmin)) {
         user.emit('user_disconnected', client.id);
+      }
+    });
+  }
+
+  onUsersCallStatusChanged(isCalling: boolean, caller: ChatSocket, callee: ChatSocket) {
+    const callingAdminId = (caller.isAdmin ? caller : callee).id;
+    const callingClientId = (caller.isAdmin ? callee : caller).id;
+    this.users.forEach(user => {
+      if (user.isAdmin) {
+        user.emit('user_call_status_changed', { isCalling, callingClientId });
+      } else {
+        user.emit('user_call_status_changed', { isCalling, callingAdminId });
       }
     });
   }
